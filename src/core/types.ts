@@ -48,7 +48,11 @@ export interface TerminalAdapter {
     command: string,
     options?: LaunchSiblingOptions,
   ): Promise<LaunchResult>;
-  insertText?(paneId: string, text: string): Promise<void>;
+  insertText?(paneId: string, text: string, options?: InsertTextOptions): Promise<void>;
+}
+
+export interface InsertTextOptions {
+  submit?: boolean;
 }
 
 export interface ForkMeta {

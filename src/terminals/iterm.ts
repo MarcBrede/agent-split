@@ -1,4 +1,4 @@
-import type { LaunchResult, LaunchSiblingOptions, TerminalAdapter, TerminalContext } from "../core/types.js";
+import type { InsertTextOptions, LaunchResult, LaunchSiblingOptions, TerminalAdapter, TerminalContext } from "../core/types.js";
 import { runFile } from "../platform/shell.js";
 
 export async function detectFocusedItermContext(
@@ -94,18 +94,22 @@ end run
     };
   }
 
-  async insertText(paneId: string, text: string): Promise<void> {
+  async insertText(paneId: string, text: string, options: InsertTextOptions = {}): Promise<void> {
     const script = `
 on run argv
   set target_pane_id to item 1 of argv
   set insert_text to item 2 of argv
+  set submit_text to false
+  if item 3 of argv is "true" then
+    set submit_text to true
+  end if
   tell application "iTerm2"
     repeat with w in windows
       repeat with t in tabs of w
         repeat with s in sessions of t
           if unique id of s is target_pane_id then
             tell s
-              write text insert_text newline NO
+              write text insert_text newline submit_text
               select
             end tell
             return
@@ -118,6 +122,6 @@ on run argv
 end run
 `;
 
-    await runFile("osascript", ["-e", script, paneId, text]);
+    await runFile("osascript", ["-e", script, paneId, text, String(options.submit ?? false)]);
   }
 }

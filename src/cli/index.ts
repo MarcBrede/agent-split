@@ -1,17 +1,19 @@
 #!/usr/bin/env node
-import { getAgentAdapter } from "../agents/index.js";
+import { getAgentAdapter, getAgentAdapters } from "../agents/index.js";
 import {
   configPath,
+  normalizeMergeMode,
   normalizeOrientation,
   normalizeTintAmount,
   parseTerminalColor,
   readConfig,
+  type MergeMode,
   type SisterConfig,
   type SplitOrientation,
 } from "../core/config.js";
 import { readForkMeta, readForkMetaForPane, writeForkMeta } from "../core/forkMeta.js";
 import { formatMergePrompt } from "../core/mergePrompt.js";
-import type { LaunchSiblingOptions, TerminalContext, TerminalName } from "../core/types.js";
+import type { AgentAdapter, AgentName, LaunchSiblingOptions, SessionRef, TerminalContext, TerminalName } from "../core/types.js";
 import { copyToClipboard } from "../platform/clipboard.js";
 import { detectTerminalContext } from "../terminals/auto.js";
 import { getTerminalAdapter } from "../terminals/index.js";
@@ -43,6 +45,7 @@ async function main(): Promise<void> {
 }
 
 async function merge(args: string[]): Promise<void> {
+  const config = await readConfig();
   const terminal = await resolveTerminal(args);
   const metaPath = readOption(args, "--meta");
   const meta = metaPath
@@ -71,12 +74,13 @@ async function merge(args: string[]): Promise<void> {
   }
 
   const output = formatMergeOutput(agent.name, delta);
-  if (hasFlag(args, "--stdout")) {
+  const mode = readMergeMode(args) ?? config.merge.mode;
+  if (mode === "stdout") {
     process.stdout.write(`${output}\n`);
     return;
   }
 
-  if (hasFlag(args, "--insert-parent")) {
+  if (mode === "insert-parent" || mode === "submit-parent") {
     const terminalAdapter = getTerminalAdapter({
       terminal: meta.terminal,
       paneId: meta.parentPaneId ?? "",
@@ -88,8 +92,9 @@ async function merge(args: string[]): Promise<void> {
     if (!meta.parentPaneId) {
       throw new Error("Fork metadata does not include a parent pane id.");
     }
-    await terminalAdapter.insertText(meta.parentPaneId, output);
-    console.log(`Inserted sister-session delta into parent ${meta.terminal} pane ${meta.parentPaneId}.`);
+    await terminalAdapter.insertText(meta.parentPaneId, output, { submit: mode === "submit-parent" });
+    const verb = mode === "submit-parent" ? "Submitted" : "Inserted";
+    console.log(`${verb} sister-session delta into parent ${meta.terminal} pane ${meta.parentPaneId}.`);
     return;
   }
 
@@ -101,11 +106,7 @@ async function status(args: string[]): Promise<void> {
   const agentName = readOption(args, "--agent") ?? "auto";
   const terminal = await resolveTerminal(args);
 
-  const agent = getAgentAdapter(agentName as "auto");
-  const session = await agent.detectCurrentSession(terminal);
-  if (!session) {
-    throw new Error(`Could not resolve current ${agent.name} session for ${terminal.terminal} pane ${terminal.paneId}.`);
-  }
+  const { agent, session } = await resolveAgentSession(agentName, terminal);
 
   console.log(JSON.stringify({
     terminal: {
@@ -121,11 +122,7 @@ async function fork(args: string[]): Promise<void> {
   const config = await readConfig();
   const terminal = await resolveTerminal(args);
 
-  const agent = getAgentAdapter(agentName as "auto");
-  const session = await agent.detectCurrentSession(terminal);
-  if (!session) {
-    throw new Error(`Could not resolve current ${agent.name} session for ${terminal.terminal} pane ${terminal.paneId}.`);
-  }
+  const { agent, session } = await resolveAgentSession(agentName, terminal);
 
   const command = await agent.buildForkCommand(session);
   if (hasFlag(args, "--print")) {
@@ -159,6 +156,37 @@ async function resolveTerminal(args: string[]): Promise<TerminalContext> {
     ?? { terminal: "unknown" as const, paneId: "", env: process.env };
 }
 
+async function resolveAgentSession(
+  agentName: string,
+  terminal: TerminalContext,
+): Promise<{ agent: AgentAdapter; session: SessionRef }> {
+  if (agentName !== "auto") {
+    const agent = getAgentAdapter(agentName as AgentName);
+    const session = await agent.detectCurrentSession(terminal);
+    if (!session) {
+      throw new Error(`Could not resolve current ${agent.name} session for ${terminal.terminal} pane ${terminal.paneId}.`);
+    }
+    return { agent, session };
+  }
+
+  const matches: Array<{ agent: AgentAdapter; session: SessionRef }> = [];
+  for (const agent of getAgentAdapters()) {
+    const session = await agent.detectCurrentSession(terminal);
+    if (session) {
+      matches.push({ agent, session });
+    }
+  }
+
+  if (matches.length === 1) {
+    return matches[0];
+  }
+  if (matches.length > 1) {
+    throw new Error(`Ambiguous active agent for ${terminal.terminal} pane ${terminal.paneId}: ${matches.map((match) => match.agent.name).join(", ")}. Pass --agent.`);
+  }
+
+  throw new Error(`Could not resolve current agent session for ${terminal.terminal} pane ${terminal.paneId}. Pass --agent codex or --agent claude.`);
+}
+
 function readOption(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
   if (index === -1) {
@@ -173,6 +201,34 @@ function readOption(args: string[], name: string): string | undefined {
 
 function hasFlag(args: string[], name: string): boolean {
   return args.includes(name);
+}
+
+function readMergeMode(args: string[]): MergeMode | undefined {
+  const modes: MergeMode[] = [];
+  if (hasFlag(args, "--clipboard")) {
+    modes.push("clipboard");
+  }
+  if (hasFlag(args, "--stdout")) {
+    modes.push("stdout");
+  }
+  if (hasFlag(args, "--insert-parent")) {
+    modes.push("insert-parent");
+  }
+  if (hasFlag(args, "--submit-parent")) {
+    modes.push("submit-parent");
+  }
+
+  const mergeMode = readOption(args, "--merge-mode");
+  if (mergeMode !== undefined) {
+    modes.push(normalizeMergeMode(mergeMode, "--merge-mode"));
+  }
+
+  const distinctModes = new Set(modes);
+  if (distinctModes.size > 1) {
+    throw new Error("Pass only one merge output mode.");
+  }
+
+  return modes[0];
 }
 
 function readLaunchOptions(args: string[], config: SisterConfig, terminal: TerminalName): LaunchSiblingOptions {
@@ -226,10 +282,10 @@ function printHelp(): void {
   console.log(`sister
 
 Usage:
-  sister status [--agent codex]
-  sister fork [--agent codex] [--orientation horizontal|vertical] [--visuals|--no-visuals] [--tint #RRGGBB] [--tint-amount 0-1] [--focused]
-  sister fork --print [--agent codex]
-  sister merge [--stdout] [--insert-parent] [--meta path] [--focused]
+  sister status [--agent codex|claude]
+  sister fork [--agent codex|claude] [--orientation horizontal|vertical] [--visuals|--no-visuals] [--tint #RRGGBB] [--tint-amount 0-1] [--focused]
+  sister fork --print [--agent codex|claude]
+  sister merge [--clipboard|--stdout|--insert-parent|--submit-parent] [--merge-mode mode] [--meta path] [--focused]
 
 Commands:
   status   Print detected terminal and current agent session.

@@ -4,10 +4,14 @@ import { homePath } from "../platform/paths.js";
 import type { TerminalColor } from "./types.js";
 
 export type SplitOrientation = "horizontal" | "vertical";
+export type MergeMode = "clipboard" | "stdout" | "insert-parent" | "submit-parent";
 
 export interface SisterConfig {
   fork: {
     orientation: SplitOrientation;
+  };
+  merge: {
+    mode: MergeMode;
   };
   visuals: {
     enabled: boolean;
@@ -21,6 +25,9 @@ export interface SisterConfig {
 export const DEFAULT_CONFIG: SisterConfig = {
   fork: {
     orientation: "horizontal",
+  },
+  merge: {
+    mode: "clipboard",
   },
   visuals: {
     enabled: false,
@@ -81,10 +88,15 @@ function normalizeConfig(value: unknown, filePath: string): SisterConfig {
 
   const config = structuredClone(DEFAULT_CONFIG);
   const fork = optionalRecord(value.fork, "fork", filePath);
+  const merge = optionalRecord(value.merge, "merge", filePath);
   const visuals = optionalRecord(value.visuals, "visuals", filePath);
 
   if (fork?.orientation !== undefined) {
     config.fork.orientation = normalizeOrientation(fork.orientation, "fork.orientation", filePath);
+  }
+
+  if (merge?.mode !== undefined) {
+    config.merge.mode = normalizeMergeMode(merge.mode, "merge.mode", filePath);
   }
 
   if (visuals?.enabled !== undefined) {
@@ -122,6 +134,19 @@ export function normalizeOrientation(value: unknown, name: string, filePath = "C
     return value;
   }
   throw new Error(`Invalid ${name} in ${filePath}: expected horizontal or vertical.`);
+}
+
+export function normalizeMergeMode(value: unknown, name: string, filePath = "CLI"): MergeMode {
+  if (
+    value === "clipboard" ||
+    value === "stdout" ||
+    value === "insert-parent" ||
+    value === "submit-parent"
+  ) {
+    return value;
+  }
+
+  throw new Error(`Invalid ${name} in ${filePath}: expected clipboard, stdout, insert-parent, or submit-parent.`);
 }
 
 function optionalRecord(value: unknown, name: string, filePath: string): Record<string, unknown> | undefined {
