@@ -14,6 +14,7 @@ Supported agent adapters:
 
 - Codex
 - Claude Code
+- Pi
 
 ## Development
 
@@ -73,8 +74,8 @@ npm run dev -- fork --focused
 ```
 
 This asks iTerm2 for the currently focused pane id, then tries each supported
-agent adapter until one resolves the active session. Pass `--agent codex` or
-`--agent claude` to force a specific adapter.
+agent adapter until one resolves the active session. Pass `--agent codex`,
+`--agent claude`, or `--agent pi` to force a specific adapter.
 
 After doing work in the sister session, run merge from that sister pane:
 
@@ -114,3 +115,23 @@ claude --resume <session-id> --fork-session
 Merge works the same way as Codex: sister records fork metadata, resolves the
 child Claude JSONL session, normalizes both transcripts, and returns only the
 child-side delta after the shared prefix.
+
+## Pi
+
+Pi support uses Pi's JSONL sessions under `~/.pi/agent/sessions/`:
+
+```sh
+npm run dev -- fork --focused
+npm run dev -- fork --agent pi
+npm run dev -- fork --agent pi --focused
+npm run dev -- fork --agent pi --print
+```
+
+The generated fork command is:
+
+```sh
+pi --session-dir <session-dir> --fork <session-jsonl-path>
+```
+
+Pi sessions are tree-shaped via `id` / `parentId`, so merge normalizes the active
+branch path from each JSONL file before computing the child-side delta.

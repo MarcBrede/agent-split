@@ -184,7 +184,7 @@ async function resolveAgentSession(
     throw new Error(`Ambiguous active agent for ${terminal.terminal} pane ${terminal.paneId}: ${matches.map((match) => match.agent.name).join(", ")}. Pass --agent.`);
   }
 
-  throw new Error(`Could not resolve current agent session for ${terminal.terminal} pane ${terminal.paneId}. Pass --agent codex or --agent claude.`);
+  throw new Error(`Could not resolve current agent session for ${terminal.terminal} pane ${terminal.paneId}. Pass --agent codex, --agent claude, or --agent pi.`);
 }
 
 function readOption(args: string[], name: string): string | undefined {
@@ -282,9 +282,9 @@ function printHelp(): void {
   console.log(`sister
 
 Usage:
-  sister status [--agent codex|claude]
-  sister fork [--agent codex|claude] [--orientation horizontal|vertical] [--visuals|--no-visuals] [--tint #RRGGBB] [--tint-amount 0-1] [--focused]
-  sister fork --print [--agent codex|claude]
+  sister status [--agent codex|claude|pi]
+  sister fork [--agent codex|claude|pi] [--orientation horizontal|vertical] [--visuals|--no-visuals] [--tint #RRGGBB] [--tint-amount 0-1] [--focused]
+  sister fork --print [--agent codex|claude|pi]
   sister merge [--clipboard|--stdout|--insert-parent|--submit-parent] [--merge-mode mode] [--meta path] [--focused]
 
 Commands:

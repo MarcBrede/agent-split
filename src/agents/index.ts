@@ -1,8 +1,9 @@
 import type { AgentAdapter, AgentName } from "../core/types.js";
 import { ClaudeAdapter } from "./claude.js";
 import { CodexAdapter } from "./codex.js";
+import { PiAdapter } from "./pi.js";
 
-const adapters: AgentAdapter[] = [new CodexAdapter(), new ClaudeAdapter()];
+const adapters: AgentAdapter[] = [new CodexAdapter(), new ClaudeAdapter(), new PiAdapter()];
 
 export function getAgentAdapters(): AgentAdapter[] {
   return adapters;
