@@ -1,8 +1,17 @@
 #!/usr/bin/env node
 import { getAgentAdapter } from "../agents/index.js";
+import {
+  configPath,
+  normalizeOrientation,
+  normalizeTintAmount,
+  parseTerminalColor,
+  readConfig,
+  type SisterConfig,
+  type SplitOrientation,
+} from "../core/config.js";
 import { readForkMeta, readForkMetaForPane, writeForkMeta } from "../core/forkMeta.js";
 import { formatMergePrompt } from "../core/mergePrompt.js";
-import type { TerminalContext } from "../core/types.js";
+import type { LaunchSiblingOptions, TerminalContext, TerminalName } from "../core/types.js";
 import { copyToClipboard } from "../platform/clipboard.js";
 import { detectTerminalContext } from "../terminals/auto.js";
 import { getTerminalAdapter } from "../terminals/index.js";
@@ -109,6 +118,7 @@ async function status(args: string[]): Promise<void> {
 
 async function fork(args: string[]): Promise<void> {
   const agentName = readOption(args, "--agent") ?? "auto";
+  const config = await readConfig();
   const terminal = await resolveTerminal(args);
 
   const agent = getAgentAdapter(agentName as "auto");
@@ -129,11 +139,7 @@ async function fork(args: string[]): Promise<void> {
   }
 
   const snapshot = agent.captureForkSnapshot ? await agent.captureForkSnapshot(session) : {};
-  const child = await terminalAdapter.launchSibling(terminal, command, {
-    orientation: readOrientation(args),
-    tint: { red: 18000, green: 25000, blue: 65535 },
-    tintAmount: 0.09,
-  });
+  const child = await terminalAdapter.launchSibling(terminal, command, readLaunchOptions(args, config, terminal.terminal));
   const metaPath = await writeForkMeta({
     agent: agent.name,
     terminal: terminal.terminal,
@@ -158,22 +164,62 @@ function readOption(args: string[], name: string): string | undefined {
   if (index === -1) {
     return undefined;
   }
-  return args[index + 1];
+  const value = args[index + 1];
+  if (value === undefined || value.startsWith("--")) {
+    throw new Error(`Missing value for ${name}.`);
+  }
+  return value;
 }
 
 function hasFlag(args: string[], name: string): boolean {
   return args.includes(name);
 }
 
-function readOrientation(args: string[]): "horizontal" | "vertical" | undefined {
+function readLaunchOptions(args: string[], config: SisterConfig, terminal: TerminalName): LaunchSiblingOptions {
+  const options: LaunchSiblingOptions = {
+    orientation: readOrientation(args) ?? config.fork.orientation,
+  };
+
+  const explicitVisuals = readVisualsEnabled(args);
+  const hasVisualOverride = readOption(args, "--tint") !== undefined || readOption(args, "--tint-amount") !== undefined;
+  const visualsEnabled = explicitVisuals ?? (hasVisualOverride ? true : config.visuals.enabled);
+  if (visualsEnabled && terminal === "iterm") {
+    options.tint = parseTerminalColor(readOption(args, "--tint") ?? config.visuals.iterm.childTint);
+    options.tintAmount = readTintAmount(args) ?? config.visuals.iterm.tintAmount;
+  }
+
+  return options;
+}
+
+function readOrientation(args: string[]): SplitOrientation | undefined {
   const value = readOption(args, "--orientation");
   if (value === undefined) {
     return undefined;
   }
-  if (value === "horizontal" || value === "vertical") {
-    return value;
+  return normalizeOrientation(value, "--orientation");
+}
+
+function readTintAmount(args: string[]): number | undefined {
+  const value = readOption(args, "--tint-amount");
+  if (value === undefined) {
+    return undefined;
   }
-  throw new Error(`Invalid --orientation value: ${value}`);
+  return normalizeTintAmount(Number(value), "--tint-amount");
+}
+
+function readVisualsEnabled(args: string[]): boolean | undefined {
+  const enabled = hasFlag(args, "--visuals");
+  const disabled = hasFlag(args, "--no-visuals");
+  if (enabled && disabled) {
+    throw new Error("Pass either --visuals or --no-visuals, not both.");
+  }
+  if (enabled) {
+    return true;
+  }
+  if (disabled) {
+    return false;
+  }
+  return undefined;
 }
 
 function printHelp(): void {
@@ -181,7 +227,7 @@ function printHelp(): void {
 
 Usage:
   sister status [--agent codex]
-  sister fork [--agent codex] [--orientation horizontal|vertical] [--focused]
+  sister fork [--agent codex] [--orientation horizontal|vertical] [--visuals|--no-visuals] [--tint #RRGGBB] [--tint-amount 0-1] [--focused]
   sister fork --print [--agent codex]
   sister merge [--stdout] [--insert-parent] [--meta path] [--focused]
 
@@ -189,6 +235,9 @@ Commands:
   status   Print detected terminal and current agent session.
   fork     Start a sibling pane for the current or focused session.
   merge    Copy, print, or insert the current sibling session delta.
+
+Config:
+  ${configPath()}
 `);
 }
 

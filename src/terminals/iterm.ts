@@ -41,25 +41,31 @@ export class ItermAdapter implements TerminalAdapter {
     const script = `
 on run argv
   set fork_command to item 1 of argv
-  set tint_red to item 2 of argv as integer
-  set tint_green to item 3 of argv as integer
-  set tint_blue to item 4 of argv as integer
-  set tint_amount to item 5 of argv as real
+  set should_tint_child to false
+  if item 2 of argv is "true" then
+    set should_tint_child to true
+  end if
+  set tint_red to item 3 of argv as integer
+  set tint_green to item 4 of argv as integer
+  set tint_blue to item 5 of argv as integer
+  set tint_amount to item 6 of argv as real
   tell application "iTerm2"
     set parent_session to current session of current window
-    set parent_bg to background color of parent_session
-    set blended_red to ((item 1 of parent_bg) * (1 - tint_amount) + tint_red * tint_amount) as integer
-    set blended_green to ((item 2 of parent_bg) * (1 - tint_amount) + tint_green * tint_amount) as integer
-    set blended_blue to ((item 3 of parent_bg) * (1 - tint_amount) + tint_blue * tint_amount) as integer
-    set blended_color to {blended_red, blended_green, blended_blue}
-    if (count of parent_bg) is greater than 3 then
-      set blended_color to {blended_red, blended_green, blended_blue, item 4 of parent_bg}
-    end if
     tell parent_session
       set new_session to (${splitCommand})
     end tell
     set child_pane_id to unique id of new_session
-    set background color of new_session to blended_color
+    if should_tint_child then
+      set parent_bg to background color of parent_session
+      set blended_red to ((item 1 of parent_bg) * (1 - tint_amount) + tint_red * tint_amount) as integer
+      set blended_green to ((item 2 of parent_bg) * (1 - tint_amount) + tint_green * tint_amount) as integer
+      set blended_blue to ((item 3 of parent_bg) * (1 - tint_amount) + tint_blue * tint_amount) as integer
+      set blended_color to {blended_red, blended_green, blended_blue}
+      if (count of parent_bg) is greater than 3 then
+        set blended_color to {blended_red, blended_green, blended_blue, item 4 of parent_bg}
+      end if
+      set background color of new_session to blended_color
+    end if
     tell new_session
       write text fork_command
       select
@@ -69,12 +75,14 @@ on run argv
 end run
 `;
 
-    const tint = options.tint ?? { red: 18000, green: 25000, blue: 65535 };
-    const tintAmount = options.tintAmount ?? 0.09;
+    const shouldTint = options.tint !== undefined && options.tintAmount !== undefined && options.tintAmount > 0;
+    const tint = options.tint ?? { red: 0, green: 0, blue: 0 };
+    const tintAmount = options.tintAmount ?? 0;
     const paneId = await runFile("osascript", [
       "-e",
       script,
       command,
+      String(shouldTint),
       String(tint.red),
       String(tint.green),
       String(tint.blue),

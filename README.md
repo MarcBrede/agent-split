@@ -21,6 +21,40 @@ npm run dev -- fork --print
 `sister fork` currently launches an iTerm2 split pane when iTerm is detected.
 Use `--print` to inspect the generated agent command without launching a pane.
 
+## Configuration
+
+User settings live at:
+
+```sh
+~/.config/sister/config.json
+```
+
+If `XDG_CONFIG_HOME` is set, sister reads:
+
+```sh
+$XDG_CONFIG_HOME/sister/config.json
+```
+
+Example:
+
+```json
+{
+  "fork": {
+    "orientation": "horizontal"
+  },
+  "visuals": {
+    "enabled": false,
+    "iterm": {
+      "childTint": "#4661ff",
+      "tintAmount": 0.09
+    }
+  }
+}
+```
+
+CLI flags override config values. Config values override built-in defaults.
+Visual effects are off by default.
+
 For a macOS hotkey or any process launched outside the agent pane, use focused
 iTerm detection:
 
