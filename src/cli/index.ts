@@ -131,6 +131,8 @@ async function fork(args: string[]): Promise<void> {
   const snapshot = agent.captureForkSnapshot ? await agent.captureForkSnapshot(session) : {};
   const child = await terminalAdapter.launchSibling(terminal, command, {
     orientation: readOrientation(args),
+    tint: { red: 18000, green: 25000, blue: 65535 },
+    tintAmount: 0.09,
   });
   const metaPath = await writeForkMeta({
     agent: agent.name,

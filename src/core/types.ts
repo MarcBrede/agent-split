@@ -26,6 +26,14 @@ export interface AgentAdapter {
 
 export interface LaunchSiblingOptions {
   orientation?: "horizontal" | "vertical";
+  tint?: TerminalColor;
+  tintAmount?: number;
+}
+
+export interface TerminalColor {
+  red: number;
+  green: number;
+  blue: number;
 }
 
 export interface LaunchResult {
