@@ -8,6 +8,12 @@ context.
 
 ## macOS Setup
 
+Install Agent Split:
+
+```sh
+npm install -g agent-split
+```
+
 You will have to setup two shortcuts in macOS.
 
 ### Fork
@@ -19,7 +25,7 @@ You will have to setup two shortcuts in macOS.
 5. Use this script:
 
    ```sh
-   /opt/homebrew/bin/agent-split fork --focused
+   agent-split fork --focused
    ```
 
 ### Merge
@@ -31,5 +37,5 @@ You will have to setup two shortcuts in macOS.
 5. Use this script:
 
    ```sh
-   /opt/homebrew/bin/agent-split merge --focused --insert-parent
+   agent-split merge --focused --insert-parent
    ```

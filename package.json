@@ -1,16 +1,26 @@
 {
   "name": "agent-split",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Fork coding-agent sessions into split panes and merge context back.",
   "type": "module",
   "bin": {
-    "agent-split": "./dist/cli/index.js"
+    "agent-split": "dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MarcBrede/agent-split.git"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/cli/index.js', 0o755)\"",
     "dev": "tsx src/cli/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm run build"
   },
   "engines": {
     "node": ">=20"
