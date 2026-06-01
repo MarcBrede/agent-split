@@ -18,10 +18,14 @@ export interface SessionRef {
 export interface AgentAdapter {
   name: AgentName;
   detectCurrentSession(ctx: TerminalContext): Promise<SessionRef | null>;
-  buildForkCommand(parent: SessionRef): Promise<string>;
+  buildForkCommand(parent: SessionRef, options?: AgentLaunchOptions): Promise<string>;
   captureForkSnapshot?(parent: SessionRef): Promise<Record<string, unknown>>;
   resolveForkChild?(meta: ForkMeta, ctx: TerminalContext): Promise<SessionRef | null>;
   renderDelta?(parent: SessionRef, child: SessionRef): Promise<string>;
+}
+
+export interface AgentLaunchOptions {
+  flags?: string[];
 }
 
 export interface LaunchSiblingOptions {

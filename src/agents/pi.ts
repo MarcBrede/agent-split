@@ -3,7 +3,7 @@ import { createReadStream, type Dirent } from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { commonPrefixDelta } from "../core/delta.js";
-import type { AgentAdapter, ForkMeta, SessionRef, TerminalContext } from "../core/types.js";
+import type { AgentAdapter, AgentLaunchOptions, ForkMeta, SessionRef, TerminalContext } from "../core/types.js";
 import { piHome } from "../platform/paths.js";
 import { runFile } from "../platform/shell.js";
 import { readPiRenderedEvents } from "./piTranscript.js";
@@ -37,11 +37,13 @@ export class PiAdapter implements AgentAdapter {
     return null;
   }
 
-  async buildForkCommand(parent: SessionRef): Promise<string> {
+  async buildForkCommand(parent: SessionRef, options: AgentLaunchOptions = {}): Promise<string> {
     const cwd = parent.cwd ?? process.cwd();
     const source = parent.transcriptPath ?? parent.id;
     const sessionDir = parent.transcriptPath ? ` --session-dir ${shellQuote(path.dirname(parent.transcriptPath))}` : "";
-    return `cd ${shellQuote(cwd)} && pi${sessionDir} --fork ${shellQuote(source)}`;
+    const flags = shellWords(options.flags);
+    const flagSegment = flags ? ` ${flags}` : "";
+    return `cd ${shellQuote(cwd)} && pi${flagSegment}${sessionDir} --fork ${shellQuote(source)}`;
   }
 
   async captureForkSnapshot(parent: SessionRef): Promise<Record<string, unknown>> {
@@ -415,6 +417,10 @@ async function pathExists(candidate: string): Promise<boolean> {
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function shellWords(values: string[] = []): string {
+  return values.map(shellQuote).join(" ");
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

@@ -1,10 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { homePath } from "../platform/paths.js";
-import type { TerminalColor } from "./types.js";
+import type { AgentName, TerminalColor } from "./types.js";
 
 export type SplitOrientation = "horizontal" | "vertical";
 export type MergeMode = "clipboard" | "stdout" | "insert-parent" | "submit-parent";
+
+export interface AgentConfig {
+  flags: string[];
+}
 
 export interface SisterConfig {
   fork: {
@@ -20,6 +24,7 @@ export interface SisterConfig {
       tintAmount: number;
     };
   };
+  agents: Record<AgentName, AgentConfig>;
 }
 
 export const DEFAULT_CONFIG: SisterConfig = {
@@ -35,6 +40,12 @@ export const DEFAULT_CONFIG: SisterConfig = {
       childTint: "#4661ff",
       tintAmount: 0.09,
     },
+  },
+  agents: {
+    codex: { flags: [] },
+    claude: { flags: [] },
+    pi: { flags: [] },
+    opencode: { flags: [] },
   },
 };
 
@@ -90,6 +101,7 @@ function normalizeConfig(value: unknown, filePath: string): SisterConfig {
   const fork = optionalRecord(value.fork, "fork", filePath);
   const merge = optionalRecord(value.merge, "merge", filePath);
   const visuals = optionalRecord(value.visuals, "visuals", filePath);
+  const agents = optionalRecord(value.agents, "agents", filePath);
 
   if (fork?.orientation !== undefined) {
     config.fork.orientation = normalizeOrientation(fork.orientation, "fork.orientation", filePath);
@@ -117,6 +129,13 @@ function normalizeConfig(value: unknown, filePath: string): SisterConfig {
 
   if (iterm?.tintAmount !== undefined) {
     config.visuals.iterm.tintAmount = normalizeTintAmount(iterm.tintAmount, "visuals.iterm.tintAmount", filePath);
+  }
+
+  for (const agentName of agentNames()) {
+    const agent = optionalRecord(agents?.[agentName], `agents.${agentName}`, filePath);
+    if (agent?.flags !== undefined) {
+      config.agents[agentName].flags = normalizeStringArray(agent.flags, `agents.${agentName}.flags`, filePath);
+    }
   }
 
   return config;
@@ -159,8 +178,19 @@ function optionalRecord(value: unknown, name: string, filePath: string): Record<
   throw new Error(`Invalid config at ${filePath}: ${name} must be an object.`);
 }
 
+function normalizeStringArray(value: unknown, name: string, filePath: string): string[] {
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+    throw new Error(`Invalid config at ${filePath}: ${name} must be an array of strings.`);
+  }
+  return value;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function agentNames(): AgentName[] {
+  return ["codex", "claude", "pi", "opencode"];
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

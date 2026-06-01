@@ -3,7 +3,7 @@ import { createReadStream, type Dirent } from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { commonPrefixDelta } from "../core/delta.js";
-import type { AgentAdapter, ForkMeta, SessionRef, TerminalContext } from "../core/types.js";
+import type { AgentAdapter, AgentLaunchOptions, ForkMeta, SessionRef, TerminalContext } from "../core/types.js";
 import { claudeHome } from "../platform/paths.js";
 import { runFile } from "../platform/shell.js";
 import { readClaudeRenderedEvents } from "./claudeTranscript.js";
@@ -36,9 +36,11 @@ export class ClaudeAdapter implements AgentAdapter {
     return null;
   }
 
-  async buildForkCommand(parent: SessionRef): Promise<string> {
+  async buildForkCommand(parent: SessionRef, options: AgentLaunchOptions = {}): Promise<string> {
     const cwd = parent.cwd ?? process.cwd();
-    return `cd ${shellQuote(cwd)} && claude --resume ${shellQuote(parent.id)} --fork-session`;
+    const flags = shellWords(options.flags);
+    const flagSegment = flags ? ` ${flags}` : "";
+    return `cd ${shellQuote(cwd)} && claude${flagSegment} --resume ${shellQuote(parent.id)} --fork-session`;
   }
 
   async captureForkSnapshot(parent: SessionRef): Promise<Record<string, unknown>> {
@@ -371,6 +373,10 @@ function readStringArray(value: unknown): string[] {
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function shellWords(values: string[] = []): string {
+  return values.map(shellQuote).join(" ");
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

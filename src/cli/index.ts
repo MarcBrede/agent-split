@@ -124,7 +124,7 @@ async function fork(args: string[]): Promise<void> {
 
   const { agent, session } = await resolveAgentSession(agentName, terminal);
 
-  const command = await agent.buildForkCommand(session);
+  const command = await agent.buildForkCommand(session, config.agents[agent.name]);
   if (hasFlag(args, "--print")) {
     console.log(command);
     return;

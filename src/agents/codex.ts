@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
 import { commonPrefixDelta } from "../core/delta.js";
-import type { AgentAdapter, ForkMeta, SessionRef, TerminalContext } from "../core/types.js";
+import type { AgentAdapter, AgentLaunchOptions, ForkMeta, SessionRef, TerminalContext } from "../core/types.js";
 import { codexHome } from "../platform/paths.js";
 import { runFile } from "../platform/shell.js";
 import { readCodexRenderedEvents } from "./codexTranscript.js";
@@ -45,9 +45,11 @@ export class CodexAdapter implements AgentAdapter {
     };
   }
 
-  async buildForkCommand(parent: SessionRef): Promise<string> {
+  async buildForkCommand(parent: SessionRef, options: AgentLaunchOptions = {}): Promise<string> {
     const cwd = parent.cwd ?? process.cwd();
-    return `cd ${shellQuote(cwd)} && CODEX_FORK_PARENT=${shellQuote(parent.id)} codex fork --cd ${shellQuote(cwd)} ${shellQuote(parent.id)}`;
+    const flags = shellWords(options.flags);
+    const flagSegment = flags ? ` ${flags}` : "";
+    return `cd ${shellQuote(cwd)} && CODEX_FORK_PARENT=${shellQuote(parent.id)} codex fork --cd ${shellQuote(cwd)}${flagSegment} ${shellQuote(parent.id)}`;
   }
 
   async captureForkSnapshot(_parent: SessionRef): Promise<Record<string, unknown>> {
@@ -198,6 +200,10 @@ function escapeSql(value: string): string {
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function shellWords(values: string[] = []): string {
+  return values.map(shellQuote).join(" ");
 }
 
 async function listCodexTranscriptPaths(): Promise<string[]> {
