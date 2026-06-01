@@ -7,8 +7,8 @@ import {
   normalizeTintAmount,
   parseTerminalColor,
   readConfig,
+  type AgentSplitConfig,
   type MergeMode,
-  type SisterConfig,
   type SplitOrientation,
 } from "../core/config.js";
 import { readForkMeta, readForkMetaForPane, writeForkMeta } from "../core/forkMeta.js";
@@ -70,7 +70,7 @@ async function merge(args: string[]): Promise<void> {
 
   const delta = await agent.renderDelta(meta.parentSession, child);
   if (!delta.trim()) {
-    throw new Error("No sister-session delta found.");
+    throw new Error("No split-session delta found.");
   }
 
   const output = formatMergeOutput(agent.name, delta);
@@ -94,12 +94,12 @@ async function merge(args: string[]): Promise<void> {
     }
     await terminalAdapter.insertText(meta.parentPaneId, output, { submit: mode === "submit-parent" });
     const verb = mode === "submit-parent" ? "Submitted" : "Inserted";
-    console.log(`${verb} sister-session delta into parent ${meta.terminal} pane ${meta.parentPaneId}.`);
+    console.log(`${verb} split-session delta into parent ${meta.terminal} pane ${meta.parentPaneId}.`);
     return;
   }
 
   await copyToClipboard(output);
-  console.log("Copied sister-session delta to clipboard.");
+  console.log("Copied split-session delta to clipboard.");
 }
 
 async function status(args: string[]): Promise<void> {
@@ -132,7 +132,7 @@ async function fork(args: string[]): Promise<void> {
 
   const terminalAdapter = getTerminalAdapter(terminal);
   if (!terminalAdapter) {
-    throw new Error(`Launching sibling panes is not implemented for terminal: ${terminal.terminal}. Use --print to print the fork command.`);
+    throw new Error(`Launching split panes is not implemented for terminal: ${terminal.terminal}. Use --print to print the fork command.`);
   }
 
   const snapshot = agent.captureForkSnapshot ? await agent.captureForkSnapshot(session) : {};
@@ -231,7 +231,7 @@ function readMergeMode(args: string[]): MergeMode | undefined {
   return modes[0];
 }
 
-function readLaunchOptions(args: string[], config: SisterConfig, terminal: TerminalName): LaunchSiblingOptions {
+function readLaunchOptions(args: string[], config: AgentSplitConfig, terminal: TerminalName): LaunchSiblingOptions {
   const options: LaunchSiblingOptions = {
     orientation: readOrientation(args) ?? config.fork.orientation,
   };
@@ -279,18 +279,18 @@ function readVisualsEnabled(args: string[]): boolean | undefined {
 }
 
 function printHelp(): void {
-  console.log(`sister
+  console.log(`agent-split
 
 Usage:
-  sister status [--agent codex|claude|pi]
-  sister fork [--agent codex|claude|pi] [--orientation horizontal|vertical] [--visuals|--no-visuals] [--tint #RRGGBB] [--tint-amount 0-1] [--focused]
-  sister fork --print [--agent codex|claude|pi]
-  sister merge [--clipboard|--stdout|--insert-parent|--submit-parent] [--merge-mode mode] [--meta path] [--focused]
+  agent-split status [--agent codex|claude|pi]
+  agent-split fork [--agent codex|claude|pi] [--orientation horizontal|vertical] [--visuals|--no-visuals] [--tint #RRGGBB] [--tint-amount 0-1] [--focused]
+  agent-split fork --print [--agent codex|claude|pi]
+  agent-split merge [--clipboard|--stdout|--insert-parent|--submit-parent] [--merge-mode mode] [--meta path] [--focused]
 
 Commands:
   status   Print detected terminal and current agent session.
-  fork     Start a sibling pane for the current or focused session.
-  merge    Copy, print, or insert the current sibling session delta.
+  fork     Start a split pane for the current or focused session.
+  merge    Copy, print, or insert the current split-session delta.
 
 Config:
   ${configPath()}
@@ -307,6 +307,6 @@ function formatMergeOutput(agentName: string, delta: string): string {
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(`sister: ${message}`);
+  console.error(`agent-split: ${message}`);
   process.exitCode = 1;
 });

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ForkMeta } from "./types.js";
-import { sisterHome } from "../platform/paths.js";
+import { agentSplitHome } from "../platform/paths.js";
 
 export async function writeForkMeta(meta: Omit<ForkMeta, "id" | "createdAt">): Promise<string> {
   const fullMeta: ForkMeta = {
@@ -11,7 +11,7 @@ export async function writeForkMeta(meta: Omit<ForkMeta, "id" | "createdAt">): P
     createdAt: new Date().toISOString(),
   };
 
-  const dir = path.join(sisterHome(), "forks");
+  const dir = path.join(agentSplitHome(), "forks");
   await fs.mkdir(dir, { recursive: true });
 
   const filename = [
@@ -26,7 +26,7 @@ export async function writeForkMeta(meta: Omit<ForkMeta, "id" | "createdAt">): P
 }
 
 export async function readForkMetaForPane(paneId: string): Promise<ForkMeta | null> {
-  const dir = path.join(sisterHome(), "forks");
+  const dir = path.join(agentSplitHome(), "forks");
   let entries: string[];
   try {
     entries = await fs.readdir(dir);

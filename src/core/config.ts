@@ -10,7 +10,7 @@ export interface AgentConfig {
   flags: string[];
 }
 
-export interface SisterConfig {
+export interface AgentSplitConfig {
   fork: {
     orientation: SplitOrientation;
   };
@@ -27,7 +27,7 @@ export interface SisterConfig {
   agents: Record<AgentName, AgentConfig>;
 }
 
-export const DEFAULT_CONFIG: SisterConfig = {
+export const DEFAULT_CONFIG: AgentSplitConfig = {
   fork: {
     orientation: "horizontal",
   },
@@ -51,10 +51,10 @@ export const DEFAULT_CONFIG: SisterConfig = {
 
 export function configPath(env: NodeJS.ProcessEnv = process.env): string {
   const configHome = env.XDG_CONFIG_HOME || homePath(".config");
-  return path.join(configHome, "sister", "config.json");
+  return path.join(configHome, "agent-split", "config.json");
 }
 
-export async function readConfig(env: NodeJS.ProcessEnv = process.env): Promise<SisterConfig> {
+export async function readConfig(env: NodeJS.ProcessEnv = process.env): Promise<AgentSplitConfig> {
   const filePath = configPath(env);
 
   let raw: string;
@@ -92,7 +92,7 @@ export function parseTerminalColor(value: string): TerminalColor {
   };
 }
 
-function normalizeConfig(value: unknown, filePath: string): SisterConfig {
+function normalizeConfig(value: unknown, filePath: string): AgentSplitConfig {
   if (!isRecord(value)) {
     throw new Error(`Invalid config at ${filePath}: expected a JSON object.`);
   }

@@ -17,6 +17,6 @@ export function piHome(env: NodeJS.ProcessEnv = process.env): string {
   return env.PI_CODING_AGENT_DIR ?? homePath(".pi", "agent");
 }
 
-export function sisterHome(): string {
-  return process.env.SISTER_HOME ?? homePath(".sister");
+export function agentSplitHome(): string {
+  return process.env.AGENT_SPLIT_HOME ?? homePath(".agent-split");
 }

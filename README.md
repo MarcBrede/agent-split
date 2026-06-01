@@ -1,9 +1,9 @@
-# sister
+# agent-split
 
-Sister lets you fork an active coding-agent session into a sibling session.
-Use the sibling to continue another line of thought within the same scope while
+Agent Split lets you fork an active coding-agent session into a split session.
+Use the split session to continue another line of thought within the same scope while
 the parent session keeps working on its current task. When the parent is ready,
-merge the sibling back in so you can continue from one session with all relevant
+merge the split session back in so you can continue from one session with all relevant
 context.
 
 ## macOS Setup
@@ -19,7 +19,7 @@ You will have to setup two shortcuts in macOS.
 5. Use this script:
 
    ```sh
-   /opt/homebrew/bin/sister fork --focused
+   /opt/homebrew/bin/agent-split fork --focused
    ```
 
 ### Merge
@@ -31,5 +31,5 @@ You will have to setup two shortcuts in macOS.
 5. Use this script:
 
    ```sh
-   /opt/homebrew/bin/sister merge --focused --insert-parent
+   /opt/homebrew/bin/agent-split merge --focused --insert-parent
    ```

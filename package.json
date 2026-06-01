@@ -1,11 +1,11 @@
 {
-  "name": "sister-session",
+  "name": "agent-split",
   "version": "0.0.0",
   "private": true,
-  "description": "Fork coding-agent sessions into sister panes and merge context back.",
+  "description": "Fork coding-agent sessions into split panes and merge context back.",
   "type": "module",
   "bin": {
-    "sister": "./dist/cli/index.js"
+    "agent-split": "./dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
