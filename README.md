@@ -21,6 +21,11 @@ with the additional work folded in.
 
 https://github.com/user-attachments/assets/2da5b080-b0e7-4386-9f8b-ec7d8b189af1
 
+## Current Support
+
+Agent Split currently supports iTerm2 on macOS and works with Codex, Claude, and
+Pi sessions.
+
 ## macOS Setup
 
 Install Agent Split:
