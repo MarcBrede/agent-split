@@ -46,8 +46,10 @@ while focused in the agent session: one to start a fork and one to merge it back
 5. Use this script:
 
    ```sh
-   agent-split fork --focused
+   /opt/homebrew/bin/agent-split fork --focused
    ```
+
+6. Assign a hotkey to the shortcut (e.g. `⌃F`).
 
 ### Merge
 
@@ -58,5 +60,7 @@ while focused in the agent session: one to start a fork and one to merge it back
 5. Use this script:
 
    ```sh
-   agent-split merge --focused --insert-parent
+   /opt/homebrew/bin/agent-split merge --focused
    ```
+
+6. Assign a hotkey to the shortcut (e.g. `⌃M`).
