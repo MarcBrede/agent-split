@@ -3,8 +3,9 @@ import { createReadStream, type Dirent } from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { commonPrefixDelta } from "../core/delta.js";
-import type { AgentAdapter, AgentLaunchOptions, ForkMeta, SessionRef, TerminalContext } from "../core/types.js";
+import type { AgentAdapter, AgentDetectionOptions, AgentLaunchOptions, ForkMeta, SessionRef, TerminalContext } from "../core/types.js";
 import { claudeHome } from "../platform/paths.js";
+import { getFocusedGhosttyTty, getGhosttyTtys, getProcessStartTimeMs, isTtyPaneId } from "../platform/process.js";
 import { runFile } from "../platform/shell.js";
 import { readClaudeRenderedEvents } from "./claudeTranscript.js";
 
@@ -22,13 +23,13 @@ interface ClaudeSessionSummary {
 export class ClaudeAdapter implements AgentAdapter {
   name = "claude" as const;
 
-  async detectCurrentSession(ctx: TerminalContext): Promise<SessionRef | null> {
+  async detectCurrentSession(ctx: TerminalContext, options: AgentDetectionOptions = {}): Promise<SessionRef | null> {
     const envSessionId = readEnvSessionId(ctx.env);
     if (envSessionId) {
       return await sessionRefFromId(envSessionId, ctx.env.PWD);
     }
 
-    const activeTranscriptPath = await findActiveClaudeTranscriptPath(ctx);
+    const activeTranscriptPath = await findActiveClaudeTranscriptPath(ctx, options);
     if (activeTranscriptPath) {
       return await sessionRefFromTranscriptPath(activeTranscriptPath);
     }
@@ -52,8 +53,8 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   async resolveForkChild(meta: ForkMeta, ctx: TerminalContext): Promise<SessionRef | null> {
-    const current = await this.detectCurrentSession(ctx);
-    if (current && current.id !== meta.parentSession.id) {
+    const current = await this.detectCurrentSession(ctx, { strict: true });
+    if (current && sessionBelongsToFork(current, meta)) {
       return current;
     }
 
@@ -114,37 +115,110 @@ function readEnvSessionId(env: NodeJS.ProcessEnv): string | undefined {
     env.ANTHROPIC_SESSION_ID;
 }
 
-async function findActiveClaudeTranscriptPath(ctx: TerminalContext): Promise<string | null> {
-  if (ctx.terminal !== "iterm" || !ctx.paneId) {
-    return null;
+async function findActiveClaudeTranscriptPath(ctx: TerminalContext, options: AgentDetectionOptions = {}): Promise<string | null> {
+  if (ctx.terminal === "iterm" && ctx.paneId) {
+    const tty = await findItermTty(ctx.paneId);
+    if (!tty) return null;
+    return findActiveClaudeTranscriptForProcesses(await findClaudeProcessesForTty(tty));
   }
 
-  const tty = await findItermTty(ctx.paneId);
-  if (!tty) {
-    return null;
+  if (ctx.terminal === "ghostty") {
+    return findActiveClaudeTranscriptForProcesses(await findClaudeProcessesInGhostty(ctx.paneId, options));
   }
 
-  const processes = await findClaudeProcessesForTty(tty);
-  for (const processInfo of processes) {
-    const transcriptPath = await findOpenClaudeTranscriptPath(processInfo.pid);
-    if (transcriptPath) {
-      return transcriptPath;
-    }
-  }
-
-  for (const processInfo of processes) {
-    const cwd = await findProcessCwd(processInfo.pid);
-    if (!cwd) {
-      continue;
-    }
-
-    const transcriptPath = await findLatestTranscriptForCwd(cwd);
-    if (transcriptPath) {
-      return transcriptPath;
+  if (ctx.terminal === "tmux" && ctx.paneId) {
+    const ttyRaw = await runFile("tmux", ["display-message", "-p", "-t", ctx.paneId, "#{pane_tty}"]).catch(() => "");
+    const tty = ttyRaw.trim();
+    if (tty && tty !== "??") {
+      return findActiveClaudeTranscriptForProcesses(await findClaudeProcessesForTty(tty));
     }
   }
 
   return null;
+}
+
+async function findActiveClaudeTranscriptForProcesses(processes: ProcessInfo[]): Promise<string | null> {
+  for (const processInfo of processes) {
+    const transcriptPath = await findOpenClaudeTranscriptPath(processInfo.pid);
+    if (transcriptPath) return transcriptPath;
+  }
+
+  for (const processInfo of processes) {
+    const transcriptPath = await findTranscriptByProcessInfo(processInfo);
+    if (transcriptPath) return transcriptPath;
+  }
+
+  return null;
+}
+
+async function findTranscriptByProcessInfo(processInfo: ProcessInfo): Promise<string | null> {
+  // For resumed sessions, --resume <session-id> tells us exactly which session
+  const resumeId = parseResumeSessionId(processInfo.command);
+  if (resumeId) {
+    const transcriptPath = await findTranscriptPathForSession(resumeId);
+    if (transcriptPath) return transcriptPath;
+  }
+
+  // For fresh sessions, find JSONL created close to when the process started
+  const startTimeMs = await getProcessStartTimeMs(processInfo.pid);
+  if (startTimeMs !== null) {
+    return findTranscriptCreatedNear(startTimeMs);
+  }
+
+  return null;
+}
+
+function parseResumeSessionId(command: string): string | null {
+  const match = command.match(/--resume\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
+  return match?.[1] ?? null;
+}
+
+async function findTranscriptCreatedNear(startTimeMs: number): Promise<string | null> {
+  // Search all projects — process cwd (from lsof) may not match session cwd since Claude cds around
+  const paths = await listClaudeTranscriptPaths(projectsDir());
+  if (paths.length === 0) return null;
+
+  const stats = await Promise.all(paths.map(async (candidate) => ({
+    candidate,
+    stat: await fs.stat(candidate).catch(() => null),
+  })));
+
+  // Fresh session: JSONL is created within ~60s of process start (5s pre-tolerance for clock skew)
+  const candidates = stats
+    .filter((entry) => {
+      const birthtime = entry.stat?.birthtimeMs ?? 0;
+      return birthtime >= startTimeMs - 5000 && birthtime <= startTimeMs + 60000;
+    })
+    .sort((a, b) => (b.stat?.mtimeMs ?? 0) - (a.stat?.mtimeMs ?? 0));
+
+  return candidates[0]?.candidate ?? null;
+}
+
+async function findClaudeProcessesInGhostty(paneId: string, options: AgentDetectionOptions = {}): Promise<ProcessInfo[]> {
+  let ttys: Set<string>;
+  if (isTtyPaneId(paneId)) {
+    ttys = new Set([paneId]);
+  } else {
+    // ghostty-focused: scan only the focused TTY to avoid ambiguity with other agents.
+    const focusedTty = await getFocusedGhosttyTty();
+    if (focusedTty) {
+      return findClaudeProcessesForTty(focusedTty);
+    }
+    if (options.strict) {
+      return [];
+    }
+    ttys = await getGhosttyTtys();
+  }
+  if (ttys.size === 0) return [];
+  const output = await runFile("ps", ["-ax", "-o", "pid=,tty=,command="]).catch(() => "");
+  return output.split("\n").flatMap((line) => {
+    const m = line.trim().match(/^(\d+)\s+(\S+)\s+(.+)$/);
+    if (!m) return [];
+    const [, pidStr, tty, command] = m;
+    if (!ttys.has(tty)) return [];
+    const processInfo = { pid: Number(pidStr), command };
+    return isClaudeProcess(command) ? [processInfo] : [];
+  });
 }
 
 async function findItermTty(paneId: string): Promise<string | null> {
@@ -210,34 +284,6 @@ async function findProcessCwd(pid: number): Promise<string | null> {
     ?.slice(1) ?? null;
 }
 
-async function findLatestTranscriptForCwd(cwd: string): Promise<string | null> {
-  const paths = await listClaudeTranscriptPaths(projectDirForCwd(cwd));
-  if (paths.length === 0) {
-    return null;
-  }
-
-  const stats = await Promise.all(paths.map(async (candidate) => {
-    return {
-      candidate,
-      stat: await fs.stat(candidate).catch(() => null),
-    };
-  }));
-
-  const newest = stats
-    .filter((entry) => entry.stat !== null)
-    .sort((a, b) => (b.stat?.mtimeMs ?? 0) - (a.stat?.mtimeMs ?? 0))
-    .slice(0, 25);
-
-  for (const entry of newest) {
-    const summary = await readClaudeSessionSummary(entry.candidate).catch((): ClaudeSessionSummary => ({}));
-    if (!summary.cwd || summary.cwd === cwd) {
-      return entry.candidate;
-    }
-  }
-
-  return null;
-}
-
 async function findTranscriptPathForSession(sessionId: string, cwd?: string): Promise<string | null> {
   if (cwd) {
     const cwdPath = path.join(projectDirForCwd(cwd), `${sessionId}.jsonl`);
@@ -260,6 +306,10 @@ async function findNewTranscriptPath(meta: ForkMeta): Promise<string | null> {
   const candidates = allPaths.filter((candidate) => {
     return candidate !== meta.parentSession.transcriptPath && !before.has(candidate);
   });
+
+  if (candidates.length !== 1) {
+    return null;
+  }
 
   return await newestExistingPath(candidates);
 }
@@ -369,6 +419,21 @@ async function pathExists(filePath: string): Promise<boolean> {
 
 function readStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function sessionBelongsToFork(session: SessionRef, meta: ForkMeta): boolean {
+  if (session.id === meta.parentSession.id) {
+    return false;
+  }
+  if (!session.transcriptPath) {
+    return false;
+  }
+  if (session.transcriptPath === meta.parentSession.transcriptPath) {
+    return false;
+  }
+
+  const before = new Set(readStringArray(meta.snapshot.preForkTranscriptPaths));
+  return !before.has(session.transcriptPath);
 }
 
 function shellQuote(value: string): string {

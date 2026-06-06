@@ -5,6 +5,10 @@ export async function detectFocusedItermContext(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<TerminalContext | null> {
   const script = `
+tell application "System Events"
+  set frontApp to name of first application process whose frontmost is true
+  if frontApp is not "iTerm2" then return ""
+end tell
 tell application "iTerm2"
   return unique id of current session of current window
 end tell

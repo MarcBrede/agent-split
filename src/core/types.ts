@@ -1,5 +1,5 @@
 export type AgentName = "codex" | "claude" | "pi" | "opencode";
-export type TerminalName = "iterm" | "tmux" | "wezterm" | "kitty" | "unknown";
+export type TerminalName = "iterm" | "tmux" | "wezterm" | "kitty" | "ghostty" | "unknown";
 
 export interface TerminalContext {
   terminal: TerminalName;
@@ -17,11 +17,15 @@ export interface SessionRef {
 
 export interface AgentAdapter {
   name: AgentName;
-  detectCurrentSession(ctx: TerminalContext): Promise<SessionRef | null>;
+  detectCurrentSession(ctx: TerminalContext, options?: AgentDetectionOptions): Promise<SessionRef | null>;
   buildForkCommand(parent: SessionRef, options?: AgentLaunchOptions): Promise<string>;
   captureForkSnapshot?(parent: SessionRef): Promise<Record<string, unknown>>;
   resolveForkChild?(meta: ForkMeta, ctx: TerminalContext): Promise<SessionRef | null>;
   renderDelta?(parent: SessionRef, child: SessionRef): Promise<string>;
+}
+
+export interface AgentDetectionOptions {
+  strict?: boolean;
 }
 
 export interface AgentLaunchOptions {
@@ -43,6 +47,7 @@ export interface TerminalColor {
 export interface LaunchResult {
   terminal: TerminalName;
   paneId: string;
+  paneAliases?: string[];
 }
 
 export interface TerminalAdapter {
@@ -66,6 +71,7 @@ export interface ForkMeta {
   terminal: TerminalName;
   parentPaneId: string | null;
   childPaneId: string | null;
+  childPaneAliases?: string[];
   parentSession: SessionRef;
   command: string;
   snapshot: Record<string, unknown>;
