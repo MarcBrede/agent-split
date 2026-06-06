@@ -1,4 +1,6 @@
 import type { TerminalContext } from "../core/types.js";
+import { getSelfTty, isTtyPaneId } from "../platform/process.js";
+import { detectFocusedGhosttyContext } from "./ghostty.js";
 import { detectFocusedItermContext } from "./iterm.js";
 
 export interface DetectTerminalOptions {
@@ -6,7 +8,7 @@ export interface DetectTerminalOptions {
   focused?: boolean;
 }
 
-export function detectTerminal(env: NodeJS.ProcessEnv = process.env): TerminalContext | null {
+export async function detectTerminal(env: NodeJS.ProcessEnv = process.env): Promise<TerminalContext | null> {
   if (env.TMUX_PANE) {
     return { terminal: "tmux", paneId: env.TMUX_PANE, env };
   }
@@ -17,6 +19,12 @@ export function detectTerminal(env: NodeJS.ProcessEnv = process.env): TerminalCo
 
   if (env.KITTY_WINDOW_ID) {
     return { terminal: "kitty", paneId: env.KITTY_WINDOW_ID, env };
+  }
+
+  if (env.TERM_PROGRAM === "ghostty") {
+    const selfTty = await getSelfTty();
+    const paneId = env.AGENT_SPLIT_PANE_ID ?? selfTty ?? "ghostty-focused";
+    return { terminal: "ghostty", paneId, env };
   }
 
   if (env.ITERM_SESSION_ID) {
@@ -37,8 +45,14 @@ export async function detectTerminalContext(
   const env = options.env ?? process.env;
 
   if (options.focused) {
-    return await detectFocusedItermContext(env) ?? detectTerminal(env);
+    return await detectFocusedItermContext(env)
+      ?? await detectFocusedGhosttyContext(env)
+      ?? await detectTerminal(env);
   }
 
-  return detectTerminal(env) ?? await detectFocusedItermContext(env);
+  return await detectTerminal(env)
+    ?? await detectFocusedItermContext(env)
+    ?? await detectFocusedGhosttyContext(env);
 }
+
+export { isTtyPaneId };

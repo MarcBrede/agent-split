@@ -3,8 +3,9 @@ import { createReadStream, type Dirent } from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { commonPrefixDelta } from "../core/delta.js";
-import type { AgentAdapter, AgentLaunchOptions, ForkMeta, SessionRef, TerminalContext } from "../core/types.js";
+import type { AgentAdapter, AgentDetectionOptions, AgentLaunchOptions, ForkMeta, SessionRef, TerminalContext } from "../core/types.js";
 import { piHome } from "../platform/paths.js";
+import { getFocusedGhosttyTty, getGhosttyTtys, isTtyPaneId } from "../platform/process.js";
 import { runFile } from "../platform/shell.js";
 import { readPiRenderedEvents } from "./piTranscript.js";
 
@@ -23,13 +24,13 @@ interface PiSessionSummary {
 export class PiAdapter implements AgentAdapter {
   name = "pi" as const;
 
-  async detectCurrentSession(ctx: TerminalContext): Promise<SessionRef | null> {
+  async detectCurrentSession(ctx: TerminalContext, options: AgentDetectionOptions = {}): Promise<SessionRef | null> {
     const envSessionId = readEnvSessionId(ctx.env);
     if (envSessionId) {
       return await sessionRefFromId(envSessionId, ctx.env.PWD, ctx.env);
     }
 
-    const activeTranscriptPath = await findActivePiTranscriptPath(ctx);
+    const activeTranscriptPath = await findActivePiTranscriptPath(ctx, options);
     if (activeTranscriptPath) {
       return await sessionRefFromTranscriptPath(activeTranscriptPath);
     }
@@ -60,8 +61,8 @@ export class PiAdapter implements AgentAdapter {
   }
 
   async resolveForkChild(meta: ForkMeta, ctx: TerminalContext): Promise<SessionRef | null> {
-    const current = await this.detectCurrentSession(ctx);
-    if (current && current.transcriptPath !== meta.parentSession.transcriptPath && current.id !== meta.parentSession.id) {
+    const current = await this.detectCurrentSession(ctx, { strict: true });
+    if (current && await sessionBelongsToFork(current, meta)) {
       return current;
     }
 
@@ -120,37 +121,69 @@ function readEnvSessionId(env: NodeJS.ProcessEnv): string | undefined {
   return env.PI_SESSION_ID ?? env.PI_CODING_AGENT_SESSION_ID;
 }
 
-async function findActivePiTranscriptPath(ctx: TerminalContext): Promise<string | null> {
-  if (ctx.terminal !== "iterm" || !ctx.paneId) {
-    return null;
+async function findActivePiTranscriptPath(ctx: TerminalContext, options: AgentDetectionOptions = {}): Promise<string | null> {
+  if (ctx.terminal === "iterm" && ctx.paneId) {
+    const tty = await findItermTty(ctx.paneId);
+    if (!tty) return null;
+    return findActivePiTranscriptForProcesses(await findPiProcessesForTty(tty), ctx.env);
   }
 
-  const tty = await findItermTty(ctx.paneId);
-  if (!tty) {
-    return null;
+  if (ctx.terminal === "ghostty") {
+    return findActivePiTranscriptForProcesses(await findPiProcessesInGhostty(ctx.paneId, options), ctx.env);
   }
 
-  const processes = await findPiProcessesForTty(tty);
-  for (const processInfo of processes) {
-    const transcriptPath = await findOpenPiTranscriptPath(processInfo.pid);
-    if (transcriptPath) {
-      return transcriptPath;
-    }
-  }
-
-  for (const processInfo of processes) {
-    const cwd = await findProcessCwd(processInfo.pid);
-    if (!cwd) {
-      continue;
-    }
-
-    const transcriptPath = await findLatestTranscriptForCwd(cwd, ctx.env);
-    if (transcriptPath) {
-      return transcriptPath;
+  if (ctx.terminal === "tmux" && ctx.paneId) {
+    const ttyRaw = await runFile("tmux", ["display-message", "-p", "-t", ctx.paneId, "#{pane_tty}"]).catch(() => "");
+    const tty = ttyRaw.trim();
+    if (tty && tty !== "??") {
+      return findActivePiTranscriptForProcesses(await findPiProcessesForTty(tty), ctx.env);
     }
   }
 
   return null;
+}
+
+async function findActivePiTranscriptForProcesses(processes: ProcessInfo[], env: NodeJS.ProcessEnv): Promise<string | null> {
+  for (const processInfo of processes) {
+    const transcriptPath = await findOpenPiTranscriptPath(processInfo.pid);
+    if (transcriptPath) return transcriptPath;
+  }
+
+  for (const processInfo of processes) {
+    const cwd = await findProcessCwd(processInfo.pid);
+    if (!cwd) continue;
+    const transcriptPath = await findLatestTranscriptForCwd(cwd, env);
+    if (transcriptPath) return transcriptPath;
+  }
+
+  return null;
+}
+
+async function findPiProcessesInGhostty(paneId: string, options: AgentDetectionOptions = {}): Promise<ProcessInfo[]> {
+  let ttys: Set<string>;
+  if (isTtyPaneId(paneId)) {
+    ttys = new Set([paneId]);
+  } else {
+    // ghostty-focused: scan only the focused TTY to avoid ambiguity with other agents.
+    const focusedTty = await getFocusedGhosttyTty();
+    if (focusedTty) {
+      return findPiProcessesForTty(focusedTty);
+    }
+    if (options.strict) {
+      return [];
+    }
+    ttys = await getGhosttyTtys();
+  }
+  if (ttys.size === 0) return [];
+  const output = await runFile("ps", ["-ax", "-o", "pid=,tty=,command="]).catch(() => "");
+  return output.split("\n").flatMap((line) => {
+    const m = line.trim().match(/^(\d+)\s+(\S+)\s+(.+)$/);
+    if (!m) return [];
+    const [, pidStr, tty, command] = m;
+    if (!ttys.has(tty)) return [];
+    const processInfo = { pid: Number(pidStr), command };
+    return isPiProcess(command) ? [processInfo] : [];
+  });
 }
 
 async function findItermTty(paneId: string): Promise<string | null> {
@@ -286,6 +319,10 @@ async function findNewTranscriptPath(meta: ForkMeta): Promise<string | null> {
     return candidate !== meta.parentSession.transcriptPath && !before.has(candidate);
   });
 
+  if (candidates.length !== 1) {
+    return null;
+  }
+
   return await newestExistingPath(candidates);
 }
 
@@ -404,6 +441,26 @@ function sessionIdFromTranscriptPath(transcriptPath: string): string | null {
 
 function readStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+async function sessionBelongsToFork(session: SessionRef, meta: ForkMeta): Promise<boolean> {
+  if (session.id === meta.parentSession.id) {
+    return false;
+  }
+  if (!session.transcriptPath) {
+    return false;
+  }
+  if (session.transcriptPath === meta.parentSession.transcriptPath) {
+    return false;
+  }
+
+  const before = new Set(readStringArray(meta.snapshot.preForkTranscriptPaths));
+  if (before.has(session.transcriptPath)) {
+    return false;
+  }
+
+  const summary = await readPiSessionSummary(session.transcriptPath).catch((): PiSessionSummary => ({}));
+  return !summary.parentSession || summary.parentSession === meta.parentSession.id;
 }
 
 async function pathExists(candidate: string): Promise<boolean> {
